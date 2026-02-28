@@ -4,13 +4,14 @@ local Window = Library.CreateLib("Ore ESP (Debug/Admin)", "RJTheme3")
 
 --// Services
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
 --// Tab/Section
 local Tab = Window:NewTab("ESP")
 local Section = Tab:NewSection("Настройки")
+local TeleportTab = Window:NewTab("Teleport")
+local TeleportSection = TeleportTab:NewSection("Телепорты")
 
 --// ====== VALUES ======
 local VALUES = {
@@ -42,7 +43,7 @@ local VALUES = {
 --// SETTINGS (default: всё выключено)
 local masterEnabled = false
 local maxDistance = 12000
-local UPDATE_INTERVAL = 0.2 -- 200ms
+local UPDATE_INTERVAL = 0.25 -- 250ms (полное обновление ESP/метров)
 
 local enabledMinerals = {} -- [TypeName] = bool
 for t in pairs(VALUES) do
@@ -79,6 +80,18 @@ local function getMainPart(obj)
 	return nil
 end
 
+local function getTrackTarget(obj)
+	if obj:IsA("BasePart") then
+		local parent = obj.Parent
+		if parent and parent:IsA("Model") then
+			if parent:GetAttribute("Type") ~= nil or parent:GetAttribute("Locked") ~= nil then
+				return parent
+			end
+		end
+	end
+	return obj
+end
+
 local function ensureRoot()
 	local char = LocalPlayer.Character
 	if not char then
@@ -86,6 +99,15 @@ local function ensureRoot()
 		return
 	end
 	rootPart = char:FindFirstChild("HumanoidRootPart")
+end
+
+local function teleportTo(targetCFrame)
+	ensureRoot()
+	if not rootPart then return end
+
+	rootPart.AssemblyLinearVelocity = Vector3.zero
+	rootPart.AssemblyAngularVelocity = Vector3.zero
+	rootPart.CFrame = targetCFrame
 end
 
 LocalPlayer.CharacterAdded:Connect(function()
@@ -159,6 +181,10 @@ local function showForObj(obj, part, text)
 	onlyShown[obj] = true
 end
 
+local function formatEspText(infoType, infoPrice, dist)
+	return string.format("%s\n%s\n%dm", infoType, tostring(infoPrice), math.floor(dist + 0.5))
+end
+
 --// Track/untrack
 local function disconnectObj(obj)
 	local list = connByObj[obj]
@@ -208,6 +234,8 @@ local function shouldBeConsidered(info)
 end
 
 local function watch(obj)
+	obj = getTrackTarget(obj)
+
 	if tracked[obj] then
 		return
 	end
@@ -217,7 +245,9 @@ local function watch(obj)
 	end
 
 	local part = getMainPart(obj)
-	if not part then return end
+	if not part and not obj:IsA("Model") then
+		return
+	end
 
 	tracked[obj] = { part = part, type = nil, price = nil, locked = nil }
 	trackedCount += 1
@@ -242,27 +272,29 @@ local function watch(obj)
 end
 
 local function scanWorkspaceOnce()
-	for _, obj in ipairs(workspace:GetDescendants()) do
+	local all = workspace:GetDescendants()
+	for i, obj in ipairs(all) do
 		watch(obj)
+		if i % 400 == 0 then
+			task.wait() -- не фризим запуск
+		end
 	end
 end
 
-scanWorkspaceOnce()
+-- запускаем скан в отдельной задаче, чтобы UI появился быстрее
+task.spawn(scanWorkspaceOnce)
 workspace.DescendantAdded:Connect(watch)
 
---// MAIN UPDATE LOOP (каждые 200мс)
+--// MAIN UPDATE LOOP (полный проход по объектам каждые ~250мс)
 task.spawn(function()
 	while true do
 		task.wait(UPDATE_INTERVAL)
 
-		-- обновим root (на случай телепорта/респавна)
 		if not rootPart or not rootPart.Parent then
 			ensureRoot()
 		end
 
-		-- если мастер выключен — быстро убираем всё, цикл не грузим
 		if not masterEnabled then
-			-- прячем только то, что было показано (быстро)
 			for obj in pairs(onlyShown) do
 				hideForObj(obj)
 			end
@@ -270,7 +302,6 @@ task.spawn(function()
 		end
 
 		local root = rootPart
-		-- если root нет, скрываем всё показанное
 		if not root then
 			for obj in pairs(onlyShown) do
 				hideForObj(obj)
@@ -280,20 +311,15 @@ task.spawn(function()
 
 		local rootPos = root.Position
 
-		-- 1) сначала обновляем/показываем подходящие
 		for obj, info in pairs(tracked) do
-			-- часть могла поменяться (например PrimaryPart назначили позже)
 			if (not info.part) or (info.part and not info.part.Parent) then
-				local p = getMainPart(obj)
-				info.part = p
+				info.part = getMainPart(obj)
 			end
 
 			if shouldBeConsidered(info) then
-				local pos = info.part.Position
-				local dist = (rootPos - pos).Magnitude
+				local dist = (rootPos - info.part.Position).Magnitude
 				if dist <= maxDistance then
-					local text = string.format("%s\n%s\n%dm", info.type, tostring(info.price), math.floor(dist + 0.5))
-					showForObj(obj, info.part, text)
+					showForObj(obj, info.part, formatEspText(info.type, info.price, dist))
 				else
 					hideForObj(obj)
 				end
@@ -301,13 +327,11 @@ task.spawn(function()
 				hideForObj(obj)
 			end
 		end
-
-		-- (опционально) можно чистить пул, но обычно не надо
 	end
 end)
 
 --// UI
-Section:NewLabel("По умолчанию всё выключено • Обновление дистанции: 200мс")
+Section:NewLabel("По умолчанию всё выключено • Обновление ESP/метров: ~250мс")
 
 Section:NewToggle("ESP (Master)", "Вкл/выкл все метки", function(state)
 	masterEnabled = state
@@ -362,3 +386,20 @@ for _, item in ipairs(sorted) do
 		end
 	end)
 end
+
+--// Teleports
+TeleportSection:NewButton("Выгрузка", "Телепорт к точке Выгрузка", function()
+	teleportTo(CFrame.new(63.84, 12060.04, -75.50) * CFrame.Angles(math.rad(-0.02), math.rad(90.43), math.rad(-0.00)))
+end)
+
+TeleportSection:NewButton("Магазин", "Телепорт к точке Магазин", function()
+	teleportTo(CFrame.new(-205.56, 12054.93, 130.18) * CFrame.Angles(math.rad(0.00), math.rad(90.31), math.rad(0.00)))
+end)
+
+TeleportSection:NewButton("Карго", "Телепорт к точке Карго", function()
+	teleportTo(CFrame.new(-491.15, 12059.05, -931.94) * CFrame.Angles(math.rad(-0.00), math.rad(89.86), math.rad(-0.00)))
+end)
+
+TeleportSection:NewButton("Отгрузка", "Телепорт к точке Отгрузка", function()
+	teleportTo(CFrame.new(-38.92, 12058.84, -118.55) * CFrame.Angles(math.rad(1.04), math.rad(-0.32), math.rad(0.02)))
+end)
