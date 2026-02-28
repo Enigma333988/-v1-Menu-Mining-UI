@@ -86,9 +86,9 @@ local function getTrackTarget(obj)
 	if obj:IsA("BasePart") then
 		local parent = obj.Parent
 		if parent and parent:IsA("Model") then
-			if parent:GetAttribute("Type") ~= nil or parent:GetAttribute("Locked") ~= nil then
-				return parent
-			end
+			-- Всегда трекаем модель целиком: атрибуты Type/Locked могут проставляться
+			-- с задержкой после спавна, и тогда ESP продолжит корректно обновляться.
+			return parent
 		end
 	end
 	return obj
@@ -143,7 +143,7 @@ local function shakeCurrentTruck()
 	isShakingTruck = true
 	task.spawn(function()
 		local duration = 2
-		local amplitude = 0.45
+		local amplitude = 0.9
 		local frequency = 14
 		local start = os.clock()
 
@@ -368,7 +368,17 @@ end
 
 -- запускаем скан в отдельной задаче, чтобы UI появился быстрее
 task.spawn(scanWorkspaceOnce)
-workspace.DescendantAdded:Connect(watch)
+workspace.DescendantAdded:Connect(function(obj)
+	watch(obj)
+
+	-- Дополнительно пробуем трекать предков, чтобы не пропускать руду,
+	-- когда сначала появляются части, а атрибуты модели приходят позже.
+	local parent = obj.Parent
+	while parent and parent ~= workspace do
+		watch(parent)
+		parent = parent.Parent
+	end
+end)
 
 task.spawn(function()
 	while true do
