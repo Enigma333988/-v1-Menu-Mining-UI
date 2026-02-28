@@ -46,8 +46,8 @@ local maxDistance = 12000
 
 local UPDATE_INTERVAL = 0.25 -- 250ms (полное обновление ESP/метров)
 
-local UPDATE_INTERVAL = 0.3 -- 300ms (полный проход по объектам)
-local DISTANCE_REFRESH_INTERVAL = 0.25 -- 250ms (обновление метров у уже показанных)
+local UPDATE_INTERVAL = 0.25 -- 250ms (полное обновление ESP/метров)
+
 
 local enabledMinerals = {} -- [TypeName] = bool
 for t in pairs(VALUES) do
@@ -82,6 +82,18 @@ local function getMainPart(obj)
 		return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
 	end
 	return nil
+end
+
+local function getTrackTarget(obj)
+	if obj:IsA("BasePart") then
+		local parent = obj.Parent
+		if parent and parent:IsA("Model") then
+			if parent:GetAttribute("Type") ~= nil or parent:GetAttribute("Locked") ~= nil then
+				return parent
+			end
+		end
+	end
+	return obj
 end
 
 local function ensureRoot()
@@ -226,6 +238,15 @@ local function shouldBeConsidered(info)
 end
 
 local function watch(obj)
+	if typeof(obj) ~= "Instance" then
+		return
+	end
+
+	obj = getTrackTarget(obj)
+	if not obj or obj.Parent == nil then
+		return
+	end
+
 	if tracked[obj] then
 		return
 	end
@@ -235,28 +256,51 @@ local function watch(obj)
 	end
 
 	local part = getMainPart(obj)
-	if not part then return end
+	if not part and not obj:IsA("Model") then
+		return
+	end
 
 	tracked[obj] = { part = part, type = nil, price = nil, locked = nil }
 	trackedCount += 1
 
-	updateCacheFor(obj)
+	local ok = pcall(function()
+		updateCacheFor(obj)
+	end)
+	if not ok then
+		untrack(obj)
+		return
+	end
 
 	connByObj[obj] = connByObj[obj] or {}
 
-	table.insert(connByObj[obj], obj:GetAttributeChangedSignal("Locked"):Connect(function()
-		updateCacheFor(obj)
-	end))
+	local okLocked, lockedConn = pcall(function()
+		return obj:GetAttributeChangedSignal("Locked"):Connect(function()
+			updateCacheFor(obj)
+		end)
+	end)
+	if okLocked and lockedConn then
+		table.insert(connByObj[obj], lockedConn)
+	end
 
-	table.insert(connByObj[obj], obj:GetAttributeChangedSignal("Type"):Connect(function()
-		updateCacheFor(obj)
-	end))
+	local okType, typeConn = pcall(function()
+		return obj:GetAttributeChangedSignal("Type"):Connect(function()
+			updateCacheFor(obj)
+		end)
+	end)
+	if okType and typeConn then
+		table.insert(connByObj[obj], typeConn)
+	end
 
-	table.insert(connByObj[obj], obj.AncestryChanged:Connect(function(_, parent)
-		if parent == nil then
-			untrack(obj)
-		end
-	end))
+	local okAnc, ancConn = pcall(function()
+		return obj.AncestryChanged:Connect(function(_, parent)
+			if parent == nil then
+				untrack(obj)
+			end
+		end)
+	end)
+	if okAnc and ancConn then
+		table.insert(connByObj[obj], ancConn)
+	end
 end
 
 local function scanWorkspaceOnce()
@@ -299,6 +343,20 @@ task.spawn(function()
 		local rootPos = root.Position
 
 		for obj, info in pairs(tracked) do
+
+			local okObj = pcall(function()
+				if (not info.part) or (info.part and not info.part.Parent) then
+					info.part = getMainPart(obj)
+				end
+
+				if shouldBeConsidered(info) then
+					local dist = (rootPos - info.part.Position).Magnitude
+					if dist <= maxDistance then
+						showForObj(obj, info.part, formatEspText(info.type, info.price, dist))
+					else
+						hideForObj(obj)
+					end
+=======
 			if (not info.part) or (info.part and not info.part.Parent) then
 				info.part = getMainPart(obj)
 			end
@@ -307,11 +365,14 @@ task.spawn(function()
 				local dist = (rootPos - info.part.Position).Magnitude
 				if dist <= maxDistance then
 					showForObj(obj, info.part, formatEspText(info.type, info.price, dist))
+
 				else
 					hideForObj(obj)
 				end
-			else
-				hideForObj(obj)
+			end)
+
+			if not okObj then
+				untrack(obj)
 			end
 		end
 	end
@@ -351,6 +412,10 @@ do
 end
 
 --// UI
+
+Section:NewLabel("По умолчанию всё выключено • Обновление ESP/метров: ~250мс")
+=======
+
 
 
 Section:NewToggle("ESP (Master)", "Вкл/выкл все метки", function(state)
