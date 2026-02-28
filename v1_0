@@ -44,7 +44,8 @@ local VALUES = {
 --// SETTINGS (default: всё выключено)
 local masterEnabled = false
 local maxDistance = 12000
-local UPDATE_INTERVAL = 0.2 -- 200ms
+local UPDATE_INTERVAL = 0.3 -- 300ms (полный проход по объектам)
+local DISTANCE_REFRESH_INTERVAL = 0.25 -- 250ms (обновление метров у уже показанных)
 
 local enabledMinerals = {} -- [TypeName] = bool
 for t in pairs(VALUES) do
@@ -170,6 +171,10 @@ local function showForObj(obj, part, text)
 	onlyShown[obj] = true
 end
 
+local function formatEspText(infoType, infoPrice, dist)
+	return string.format("%s\n%s\n%dm", infoType, tostring(infoPrice), math.floor(dist + 0.5))
+end
+
 --// Track/untrack
 local function disconnectObj(obj)
 	local list = connByObj[obj]
@@ -261,19 +266,16 @@ end
 scanWorkspaceOnce()
 workspace.DescendantAdded:Connect(watch)
 
---// MAIN UPDATE LOOP (каждые 200мс)
+--// MAIN UPDATE LOOP (полный проход по объектам каждые ~300мс)
 task.spawn(function()
 	while true do
 		task.wait(UPDATE_INTERVAL)
 
-		-- обновим root (на случай телепорта/респавна)
 		if not rootPart or not rootPart.Parent then
 			ensureRoot()
 		end
 
-		-- если мастер выключен — быстро убираем всё, цикл не грузим
 		if not masterEnabled then
-			-- прячем только то, что было показано (быстро)
 			for obj in pairs(onlyShown) do
 				hideForObj(obj)
 			end
@@ -281,7 +283,6 @@ task.spawn(function()
 		end
 
 		local root = rootPart
-		-- если root нет, скрываем всё показанное
 		if not root then
 			for obj in pairs(onlyShown) do
 				hideForObj(obj)
@@ -291,20 +292,15 @@ task.spawn(function()
 
 		local rootPos = root.Position
 
-		-- 1) сначала обновляем/показываем подходящие
 		for obj, info in pairs(tracked) do
-			-- часть могла поменяться (например PrimaryPart назначили позже)
 			if (not info.part) or (info.part and not info.part.Parent) then
-				local p = getMainPart(obj)
-				info.part = p
+				info.part = getMainPart(obj)
 			end
 
 			if shouldBeConsidered(info) then
-				local pos = info.part.Position
-				local dist = (rootPos - pos).Magnitude
+				local dist = (rootPos - info.part.Position).Magnitude
 				if dist <= maxDistance then
-					local text = string.format("%s\n%s\n%dm", info.type, tostring(info.price), math.floor(dist + 0.5))
-					showForObj(obj, info.part, text)
+					showForObj(obj, info.part, formatEspText(info.type, info.price, dist))
 				else
 					hideForObj(obj)
 				end
@@ -312,13 +308,44 @@ task.spawn(function()
 				hideForObj(obj)
 			end
 		end
-
-		-- (опционально) можно чистить пул, но обычно не надо
 	end
 end)
 
+--// DISTANCE REFRESH LOOP (обновляет метры у уже показанных каждые ~250мс)
+do
+	local elapsed = 0
+	RunService.Heartbeat:Connect(function(dt)
+		elapsed += dt
+		if elapsed < DISTANCE_REFRESH_INTERVAL then
+			return
+		end
+		elapsed = 0
+
+		if not masterEnabled then return end
+		if not rootPart or not rootPart.Parent then
+			ensureRoot()
+		end
+
+		local root = rootPart
+		if not root then return end
+
+		local rootPos = root.Position
+		for obj in pairs(onlyShown) do
+			local info = tracked[obj]
+			local gui = guiByObj[obj]
+			if info and info.part and info.part.Parent and gui then
+				local label = gui:FindFirstChild("Label")
+				if label then
+					local dist = (rootPos - info.part.Position).Magnitude
+					label.Text = formatEspText(info.type, info.price, dist)
+				end
+			end
+		end
+	end)
+end
+
 --// UI
-Section:NewLabel("По умолчанию всё выключено • Обновление дистанции: 200мс")
+Section:NewLabel("По умолчанию всё выключено • Метры обновляются каждые ~250мс")
 
 Section:NewToggle("ESP (Master)", "Вкл/выкл все метки", function(state)
 	masterEnabled = state
