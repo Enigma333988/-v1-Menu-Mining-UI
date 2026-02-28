@@ -4,8 +4,18 @@ local Window = Library.CreateLib("Ore ESP (Debug/Admin)", "RJTheme3")
 
 --// Services
 local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
+
+local function setupAntiAfk()
+	LocalPlayer.Idled:Connect(function()
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new())
+	end)
+end
+
+setupAntiAfk()
 
 --// Tab/Section
 local Tab = Window:NewTab("ESP")
