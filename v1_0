@@ -4,8 +4,18 @@ local Window = Library.CreateLib("Ore ESP (Debug/Admin)", "RJTheme3")
 
 --// Services
 local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
+
+local function setupAntiAfk()
+	LocalPlayer.Idled:Connect(function()
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new())
+	end)
+end
+
+setupAntiAfk()
 
 --// Tab/Section
 local Tab = Window:NewTab("ESP")
@@ -112,7 +122,7 @@ local function teleportTo(targetCFrame)
 	rootPart.CFrame = targetCFrame
 end
 
-local isShakingTruck = false
+local isTiltingTruck = false
 
 local function getCurrentTruckPart()
 	local character = LocalPlayer.Character
@@ -134,36 +144,31 @@ local function getCurrentTruckPart()
 	return seat
 end
 
-local function shakeCurrentTruck()
-	if isShakingTruck then return end
+local function flipCurrentTruck()
+	if isTiltingTruck then return end
 
 	local truckPart = getCurrentTruckPart()
 	if not truckPart then return end
 
-	isShakingTruck = true
+	isTiltingTruck = true
 	task.spawn(function()
-		local duration = 2
-		local amplitude = 0.9
-		local frequency = 14
-		local start = os.clock()
+		local holdDuration = 2
+		local startCFrame = truckPart.CFrame
+		local liftedCFrame = startCFrame * CFrame.Angles(math.rad(-90), 0, 0)
 
-		while os.clock() - start < duration do
-			if not truckPart or not truckPart.Parent then
-				break
-			end
+		truckPart.AssemblyLinearVelocity = Vector3.zero
+		truckPart.AssemblyAngularVelocity = Vector3.zero
+		truckPart.CFrame = liftedCFrame
 
-			local elapsed = os.clock() - start
-			local xOffset = math.sin(elapsed * frequency * math.pi * 2) * amplitude
-			local zOffset = math.cos(elapsed * frequency * math.pi * 2) * (amplitude * 0.5)
+		task.wait(holdDuration)
 
+		if truckPart and truckPart.Parent then
 			truckPart.AssemblyLinearVelocity = Vector3.zero
 			truckPart.AssemblyAngularVelocity = Vector3.zero
-			truckPart.CFrame = truckPart.CFrame * CFrame.new(xOffset, 0, zOffset)
-
-			task.wait(0.03)
+			truckPart.CFrame = startCFrame
 		end
 
-		isShakingTruck = false
+		isTiltingTruck = false
 	end)
 end
 
@@ -504,6 +509,6 @@ TeleportSection:NewButton("Отгрузка", "Телепорт к точке О
 	teleportTo(CFrame.new(-38.92, 12058.84, -118.55) * CFrame.Angles(math.rad(1.04), math.rad(-0.32), math.rad(0.02)))
 end)
 
-TeleportSection:NewButton("Встряхнуть", "Слегка встряхнуть грузовик на 2 секунды", function()
-	shakeCurrentTruck()
+TeleportSection:NewButton("Перевернуть", "Поднять перед грузовика на 2 секунды", function()
+	flipCurrentTruck()
 end)
