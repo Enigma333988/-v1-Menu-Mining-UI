@@ -8,6 +8,32 @@ local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 
+local STREAM_RADIUS = 4000
+
+local function requestStreamingAround(position)
+	if typeof(position) ~= "Vector3" then return end
+	pcall(function()
+		workspace:RequestStreamAroundAsync(position)
+	end)
+end
+
+local function setupStreamingRadius()
+	pcall(function()
+		if typeof(sethiddenproperty) == "function" then
+			sethiddenproperty(workspace, "StreamingTargetRadius", STREAM_RADIUS)
+			sethiddenproperty(workspace, "StreamingMinRadius", STREAM_RADIUS)
+		end
+	end)
+
+	local character = LocalPlayer.Character
+	if character then
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			requestStreamingAround(hrp.Position)
+		end
+	end
+end
+
 local function setupAntiAfk()
 	LocalPlayer.Idled:Connect(function()
 		VirtualUser:CaptureController()
@@ -16,6 +42,7 @@ local function setupAntiAfk()
 end
 
 setupAntiAfk()
+setupStreamingRadius()
 
 --// Tab/Section
 local Tab = Window:NewTab("ESP")
@@ -120,6 +147,7 @@ local function teleportTo(targetCFrame)
 	rootPart.AssemblyLinearVelocity = Vector3.zero
 	rootPart.AssemblyAngularVelocity = Vector3.zero
 	rootPart.CFrame = targetCFrame
+	requestStreamingAround(targetCFrame.Position)
 end
 
 local isTiltingTruck = false
@@ -174,6 +202,7 @@ end
 
 LocalPlayer.CharacterAdded:Connect(function()
 	task.defer(ensureRoot)
+	task.defer(setupStreamingRadius)
 end)
 ensureRoot()
 
