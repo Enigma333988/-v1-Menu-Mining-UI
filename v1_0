@@ -46,8 +46,6 @@ local maxDistance = 12000
 
 local UPDATE_INTERVAL = 0.25 -- 250ms (полное обновление ESP/метров)
 
-local UPDATE_INTERVAL = 0.25 -- 250ms (полное обновление ESP/метров)
-
 
 local enabledMinerals = {} -- [TypeName] = bool
 for t in pairs(VALUES) do
@@ -343,7 +341,6 @@ task.spawn(function()
 		local rootPos = root.Position
 
 		for obj, info in pairs(tracked) do
-
 			local okObj = pcall(function()
 				if (not info.part) or (info.part and not info.part.Parent) then
 					info.part = getMainPart(obj)
@@ -356,16 +353,6 @@ task.spawn(function()
 					else
 						hideForObj(obj)
 					end
-=======
-			if (not info.part) or (info.part and not info.part.Parent) then
-				info.part = getMainPart(obj)
-			end
-
-			if shouldBeConsidered(info) then
-				local dist = (rootPos - info.part.Position).Magnitude
-				if dist <= maxDistance then
-					showForObj(obj, info.part, formatEspText(info.type, info.price, dist))
-
 				else
 					hideForObj(obj)
 				end
@@ -378,46 +365,9 @@ task.spawn(function()
 	end
 end)
 
---// DISTANCE REFRESH LOOP (обновляет метры у уже показанных каждые ~250мс)
-do
-	local elapsed = 0
-	RunService.Heartbeat:Connect(function(dt)
-		elapsed += dt
-		if elapsed < DISTANCE_REFRESH_INTERVAL then
-			return
-		end
-		elapsed = 0
-
-		if not masterEnabled then return end
-		if not rootPart or not rootPart.Parent then
-			ensureRoot()
-		end
-
-		local root = rootPart
-		if not root then return end
-
-		local rootPos = root.Position
-		for obj in pairs(onlyShown) do
-			local info = tracked[obj]
-			local gui = guiByObj[obj]
-			if info and info.part and info.part.Parent and gui then
-				local label = gui:FindFirstChild("Label")
-				if label then
-					local dist = (rootPos - info.part.Position).Magnitude
-					label.Text = formatEspText(info.type, info.price, dist)
-				end
-			end
-		end
-	end)
-end
-
 --// UI
 
 Section:NewLabel("По умолчанию всё выключено • Обновление ESP/метров: ~250мс")
-=======
-
-
-
 Section:NewToggle("ESP (Master)", "Вкл/выкл все метки", function(state)
 	masterEnabled = state
 	-- мгновенно обновим видимость
