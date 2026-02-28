@@ -112,6 +112,61 @@ local function teleportTo(targetCFrame)
 	rootPart.CFrame = targetCFrame
 end
 
+local isShakingTruck = false
+
+local function getCurrentTruckPart()
+	local character = LocalPlayer.Character
+	if not character then return nil end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return nil end
+
+	local seat = humanoid.SeatPart
+	if not seat or not seat:IsA("BasePart") then
+		return nil
+	end
+
+	local vehicleModel = seat:FindFirstAncestorOfClass("Model")
+	if vehicleModel then
+		return vehicleModel.PrimaryPart or vehicleModel:FindFirstChildWhichIsA("BasePart") or seat
+	end
+
+	return seat
+end
+
+local function shakeCurrentTruck()
+	if isShakingTruck then return end
+
+	local truckPart = getCurrentTruckPart()
+	if not truckPart then return end
+
+	isShakingTruck = true
+	task.spawn(function()
+		local duration = 2
+		local amplitude = 0.45
+		local frequency = 14
+		local start = os.clock()
+
+		while os.clock() - start < duration do
+			if not truckPart or not truckPart.Parent then
+				break
+			end
+
+			local elapsed = os.clock() - start
+			local xOffset = math.sin(elapsed * frequency * math.pi * 2) * amplitude
+			local zOffset = math.cos(elapsed * frequency * math.pi * 2) * (amplitude * 0.5)
+
+			truckPart.AssemblyLinearVelocity = Vector3.zero
+			truckPart.AssemblyAngularVelocity = Vector3.zero
+			truckPart.CFrame = truckPart.CFrame * CFrame.new(xOffset, 0, zOffset)
+
+			task.wait(0.03)
+		end
+
+		isShakingTruck = false
+	end)
+end
+
 LocalPlayer.CharacterAdded:Connect(function()
 	task.defer(ensureRoot)
 end)
@@ -437,4 +492,8 @@ end)
 
 TeleportSection:NewButton("Отгрузка", "Телепорт к точке Отгрузка", function()
 	teleportTo(CFrame.new(-38.92, 12058.84, -118.55) * CFrame.Angles(math.rad(1.04), math.rad(-0.32), math.rad(0.02)))
+end)
+
+TeleportSection:NewButton("Встряхнуть", "Слегка встряхнуть грузовик на 2 секунды", function()
+	shakeCurrentTruck()
 end)
